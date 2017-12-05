@@ -1,0 +1,167 @@
+Assignment
+- designa nd implement a virtual memory system
+- manages the segments and page tables in a simulated main memory
+- accepts virtual addresses and translates them into physical addresses
+- uses a translation look aside buffer to speed up the process
+Organization of the VM system
+- segment table
+    - each entry is one segment
+    - 0, 1 ... S segments
+    - segment S points/contains its page table
+    - page table contains the word address
+- there is only a single process, therefore there
+    is only one segment table
+    - don't need a segment table pointer
+- Each ST entry points to a PT
+    - -1: PT is currently not resident in PM (page fault)
+    - 0: corresponding PT does not exist
+        - read: error
+        - write: create blank PT
+    - f (integer): points to a PT at the physical address f
+- Each PT entry points to a program/data page
+    - -1: page is currently not resident in physical memory (page fault)
+    - 0: corresponding page does not exist
+        - read: error
+        - write: create blank page
+    - f: page starts at physical address f
+- A VA is an integer (32 bits), divided into s, p, w
+    - |s| = 9, ST size is 512 words (int)
+    - |p| = 10, PT size is 1024 words
+    - |w| = 9, page size is 512 words
+    - the leading 4 bits of the VA is unused
+
+Organization of Physical Memory
+- PM is represented as an array of integers
+    each corresponds to one addressable memory word
+- PM is divided into frams of size 512 words (integers)
+    - ST occupies one frame
+    - each PT occupies two conescutive frames
+    - each program/data page occupies one frame
+- Physcal Address consists of 1024 frames (=array of 524,288 integers, = 2MB)
+    - consequently the size of PA is 19 bits
+    - |f| = 10 bits, frame number
+    - |w| = 9, for the offset
+- ST always resides in frame 0 and is never paged out
+- a page may be placed into any free frame
+- a page table may be placed into any pair of 2 consecutive frames
+
+- PM[s] accesses the ST
+    - if the entry is 0 < s < 511 it points to a resident PT
+- PM[PM[s] + p] accesses the PT
+    - if the entry is > 0 then it points to a valid page in memory
+- all ST/PT entries are multiples of 512
+
+Bit map
+- consists of 1024 bits (one per frame)
+- it can be implemented as an array of 32 integers
+- normally this would be maintained inside the PM but in this project it may be implemented as a separate data structure
+
+Address Translation Process
+- break each VA into s, p, w
+    - can either shift or mask the bits
+- for each read access
+    - if ST or PT entry is -1 then output "pf" (page fault) and continue with next VA
+    - if ST or PT entry is 0 then output "error" and continue with next VA
+    - otherwise output PA = PM[PM[s] + p] + w
+- for write access:
+    - if ST or PT entry is -1 then output "pf"
+    - if ST entry is 0 then
+        - allocate new blank PT (all zeros)
+        - update the ST entry accoringly
+        - continue with the translation process
+    - if PT entry is 0 then
+        - create a new blank page
+        - update the PT entry accordingly
+        - continue with the translation process
+    - Otherwise output the correspondng PA
+
+Initialization of PM
+- Read init file:
+    s1f1 s2f2 ... snfn
+    p1s1f1 p2s2f2 ... pmsmfm
+    -sifi: PT of segment si starts at address fi
+        - if fi = -1 then the corresponding PT is not resident
+        - Example:
+            15 512: PT of seg 15 starts at address 512
+            - so at segment 15 PM[14], put in 512
+            9 -1: PT of seg 9 is not resident
+            - at segment 9, store -1
+    - pjsjfj: page pj of segment sj starts at addres fj
+        - if fi = -1 then the corresponding page is not resident
+        - example:
+            7 13 4096: page 7 of seg 13 starts at 4096
+            8 13 -1: page 8 of seg 13 is not resident
+
+    Initialize PM as follows:
+    - Read sifi pairs and make corresponding entries in ST
+    - Read pjsjfj triples and make entries in the PTs
+    - Create bitmap to show which frames are free
+    - Note: f is a PA, not a frame number
+
+    Running VM translations
+    - o1 VA1 o2 VA2 ... on VAn
+    - each oi is either a 0 (read) or 1 (write)
+    - each VAi is a positive integer (virtual address)
+    - each oi VAi pair attempts to translate the VA to PA
+    - write results into an output file
+
+The Translation Look-aside Buffer
+- records previous translations - remembers which frame it resides
+    - if you have a matching sp, go to frame starting at f, and add w
+- Size: 4 lines
+- LRU: int 0:3
+- 0 is least recently accessed
+- sp is an int
+- f is an int (starting frame address)
+
+Running Translations with TLB
+- break VA into sp and w
+- search TLB for match on sp
+- if TLB hit:
+    - use f from TLB to form PA = f + w
+    - update LRU fields as follows:
+        - assume the match is in line k, then:
+            - devrement all LRU values greater than [k] by 1
+            - set LRU[k] = 3
+if TLB miss:
+    - resolve VA as before (s, p and w)
+    - in case of error or page fault, no change to TLB
+    - if a valid PA is derived then TLB is updated as follows:
+        - select line with LRU = 0 and set this LRU = 3
+        - replace sp field of that line with the new sp value
+        - replace f field of that line with PM[PM[s] + p]
+        - decrement all other LRU values by 1
+
+The bit Map (pg 217)
+- BM size: # of bits needed = # of ldisk blocks
+- represent bit map as an array of integers (32 bits each)
+- BM [n] = 62 bits = 2 entries in BM
+- how to set, reset, and search for bits in BM?
+- prepare a mask array: MASK[32]
+- diagonal contains "1", all other fields are "0"
+- use bit operations (bitwise, or, and) to manip bits
+- to set bit i of BM[j] to "1":
+    BM[j] = BM[j] | MASK[i]
+
+- how to create masks
+    MASK[0] = 0x8000
+    MASK[1] = 0x4000
+    MASK[2] = 0x2000
+    MASK[3] = 0x1000
+
+    or can be created dynamically, by shifting through
+
+- to set a bit to 0
+    create a MASK2 where MASK2[i] = ~ MASK[i] //the complement
+    BM[j] = BM[j] & MASK2[i]
+
+- for searching
+    for loop to search the integers in BM
+        for loop to check each bit in BM[i]
+            test = BM[i] & MASK[j]
+            if test == 0 then
+                bit j of BM[i] is 0;
+                stop search
+
+
+
